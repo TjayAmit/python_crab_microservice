@@ -1,0 +1,36 @@
+# === Python build / cache ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+*.egg
+*.manifest
+*.spec
+
+# === Virtual environments ===
+venv/
+.env/
+env/
+
+# === IDE / OS files ===
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# === TensorFlow / model files ===
+model/
+checkpoints/
+logs/
+
+# === Dataset (don’t commit your images) ===
+curacha_dataset/
+test_dataset/
+validation_dataset/
+
+# === Temporary / runtime files ===
+*.log
+*.tmp
+*.bak
