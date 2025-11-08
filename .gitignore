@@ -29,6 +29,7 @@ logs/
 curacha_dataset/
 test_dataset/
 validation_dataset/
+dataset/
 
 # === Temporary / runtime files ===
 *.log

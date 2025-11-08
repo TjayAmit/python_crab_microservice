@@ -6,7 +6,7 @@ import os
 import json
 
 # === CONFIG ===
-DATASET_DIR = "curacha_dataset"
+DATASET_DIR = "dataset"
 MODEL_DIR = "model"
 MODEL_PATH = os.path.join(MODEL_DIR, "my_model.keras")
 CLASS_NAMES_PATH = os.path.join(MODEL_DIR, "class_names.json")

@@ -1,3 +1,5 @@
 2025-10-25 14:45:45,336 - INFO - [predict] File: image3.jpeg | Predicted: curacha_male | Confidence: 0.8596
 2025-10-25 14:46:16,406 - INFO - [predict] File: image205.jpeg | Predicted: curacha_male | Confidence: 0.8576
 2025-10-25 14:46:36,288 - INFO - [predict] File: image8.jpeg | Predicted: curacha_male | Confidence: 0.8595
+2025-10-30 22:19:43,375 - INFO - [predict] File: image7.jpg | Predicted: blue_gay_crab | Confidence: 0.3390
+2025-10-30 22:28:11,581 - INFO - [predict] File: image4.jpg | Predicted: blue_gay_crab | Confidence: 0.3395
