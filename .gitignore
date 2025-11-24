@@ -21,7 +21,6 @@ env/
 Thumbs.db
 
 # === TensorFlow / model files ===
-model/
 checkpoints/
 logs/
 
