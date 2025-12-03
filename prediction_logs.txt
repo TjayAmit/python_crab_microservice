@@ -3,3 +3,10 @@
 2025-10-25 14:46:36,288 - INFO - [predict] File: image8.jpeg | Predicted: curacha_male | Confidence: 0.8595
 2025-10-30 22:19:43,375 - INFO - [predict] File: image7.jpg | Predicted: blue_gay_crab | Confidence: 0.3390
 2025-10-30 22:28:11,581 - INFO - [predict] File: image4.jpg | Predicted: blue_gay_crab | Confidence: 0.3395
+2025-12-03 16:24:30,250 - ERROR - [predict] Validation error: Input 0 of layer "crab_classifier" is incompatible with the layer: expected shape=(None, 224, 224, 3), found shape=(1, 180, 180, 3)
+2025-12-03 16:26:42,072 - INFO - [predict] File: image3.jpeg | Predicted: curacha_female | Confidence: 0.9998
+2025-12-03 16:27:06,351 - INFO - [predict] File: image12.jpeg | Predicted: curacha_female | Confidence: 0.8312
+2025-12-03 16:27:10,894 - INFO - [predict] File: image12.jpeg | Predicted: curacha_female | Confidence: 0.8312
+2025-12-03 16:27:20,502 - INFO - [predict] File: image13.jpeg | Predicted: curacha_male | Confidence: 0.9973
+2025-12-03 16:27:44,616 - INFO - [predict] File: blue_crab_female4.jpg | Predicted: blue_crab_female | Confidence: 0.9994
+2025-12-03 16:27:59,703 - INFO - [predict] File: mud_crab_female25.jpg | Predicted: mud_crab_female | Confidence: 0.9987
