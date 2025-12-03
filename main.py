@@ -12,11 +12,10 @@ from typing import List
 app = FastAPI(title="Curacha Classification API")
 
 # === CONFIG ===
-MODEL_PATH = "model/best_model.keras"
+MODEL_PATH = "model/checkpoint_best.keras"
 CLASS_NAMES_PATH = "model/class_names.json"
 IMAGE_SIZE = (180, 180)
 DATASET_DIR = "curacha_dataset"
-
 # === LOAD MODEL ===
 if not os.path.exists(MODEL_PATH):
     raise FileNotFoundError(f"❌ Model not found at {MODEL_PATH}")
