@@ -10,6 +10,8 @@ import json
 import os
 from typing import List
 
+from models_difference_result import get_model_comparison, get_single_model_info, get_quick_summary,
+
 app = FastAPI(title="Crab Classification API")
 
 # === CONFIG ===
@@ -448,3 +450,16 @@ async def health():
         "classes": CLASS_NAMES,
         "image_size": IMAGE_SIZE
     }
+
+# === Model Comparison ===
+@app.get("/difference-of-training-models")
+async def comparison_endpoint():
+    return get_model_comparison()
+
+@app.get("/model/{model_name}")
+async def single_model_endpoint(model_name: str):
+    return get_single_model_info(model_name)
+
+@app.get("/models/summary")
+async def summary_endpoint():
+    return get_quick_summary()
