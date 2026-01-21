@@ -10,7 +10,11 @@ import json
 import os
 from typing import List
 
-from models_difference_result import get_model_comparison, get_single_model_info, get_quick_summary,
+from models_difference_result import (
+    get_model_comparison,
+    get_single_model_info,
+    get_quick_summary
+)
 
 app = FastAPI(title="Crab Classification API")
 
