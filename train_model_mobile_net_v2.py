@@ -16,14 +16,12 @@ MODEL_PATH = os.path.join(MODEL_DIR, "my_model.keras")
 CLASS_NAMES_PATH = os.path.join(MODEL_DIR, "class_names.json")
 HISTORY_PATH = os.path.join(MODEL_DIR, "training_history.json")
 
-# CRITICAL: Use 224x224 for MobileNetV2
 IMAGE_SIZE = (224, 224)
-BATCH_SIZE = 32  # Larger batch = more stable training
-EPOCHS = 100  # More epochs with early stopping
+BATCH_SIZE = 32
+EPOCHS = 100
 VALIDATION_SPLIT = 0.2
 SEED = 42
 
-# Set all random seeds
 np.random.seed(SEED)
 tf.random.set_seed(SEED)
 os.environ['PYTHONHASHSEED'] = str(SEED)
@@ -36,7 +34,6 @@ print("="*60)
 with open(ANNOTATIONS_FILE, 'r') as f:
     coco_data = json.load(f)
 
-# Extract categories and create class mapping
 categories = {cat['id']: cat['name'] for cat in coco_data['categories']}
 class_names = [categories[i] for i in sorted(categories.keys())]
 num_classes = len(class_names)
@@ -46,7 +43,6 @@ print(f"\n✅ Found {num_classes} classes:")
 for idx, name in enumerate(class_names):
     print(f"   {idx}: {name}")
 
-# Create image_id to annotations mapping
 image_annotations = {}
 for ann in coco_data['annotations']:
     img_id = ann['image_id']
@@ -54,25 +50,24 @@ for ann in coco_data['annotations']:
         image_annotations[img_id] = []
     image_annotations[img_id].append(ann)
 
-# Resolve image paths
 image_info = {}
 for img in coco_data['images']:
     img_id = img['id']
     file_name = img['file_name']
-    
+
     if '..' in file_name or file_name.startswith('label-studio'):
         file_name = os.path.basename(file_name)
-    
+
     possible_paths = [
         os.path.join(IMAGES_DIR, file_name),
         os.path.join(COCO_DIR, file_name),
         file_name,
     ]
-    
+
     original_path = os.path.join(COCO_DIR, img['file_name'])
     if os.path.exists(original_path):
         possible_paths.insert(0, original_path)
-    
+
     for path in possible_paths:
         if os.path.exists(path):
             image_info[img_id] = path
@@ -80,7 +75,6 @@ for img in coco_data['images']:
 
 print(f"\n📊 Found {len(image_info)}/{len(coco_data['images'])} valid image files")
 
-# Build dataset with class tracking
 class_counts = defaultdict(int)
 dataset_items = []
 
@@ -102,14 +96,13 @@ if len(dataset_items) < 100:
     print("\n❌ ERROR: Too few images! Need at least 100 images total.")
     exit(1)
 
-# Stratified split - maintain class balance
 train_items = []
 val_items = []
 
 for class_idx in range(num_classes):
     class_items = [item for item in dataset_items if item[1] == class_idx]
     np.random.shuffle(class_items)
-    
+
     split_idx = int(len(class_items) * (1 - VALIDATION_SPLIT))
     train_items.extend(class_items[:split_idx])
     val_items.extend(class_items[split_idx:])
@@ -121,7 +114,6 @@ print(f"\n✅ Split complete:")
 print(f"   Training: {len(train_items)} images")
 print(f"   Validation: {len(val_items)} images")
 
-# Calculate class weights for imbalanced data
 train_labels = [item[1] for item in train_items]
 class_weights = compute_class_weight(
     class_weight='balanced',
@@ -131,7 +123,6 @@ class_weights = compute_class_weight(
 class_weight_dict = {i: weight for i, weight in enumerate(class_weights)}
 print(f"\n⚖️ Class weights computed (to handle imbalance)")
 
-# Save class names
 os.makedirs(MODEL_DIR, exist_ok=True)
 with open(CLASS_NAMES_PATH, "w") as f:
     json.dump(class_names, f, indent=2)
@@ -142,71 +133,45 @@ print("🔧 BUILDING DATA PIPELINE")
 print("="*60)
 
 def load_and_preprocess_image(img_path, label):
-    """Load image with proper MobileNetV2 preprocessing"""
-    # Read and decode image
     img = tf.io.read_file(img_path)
     img = tf.image.decode_image(img, channels=3, expand_animations=False)
     img.set_shape([None, None, 3])
-    
-    # Resize to target size
     img = tf.image.resize(img, IMAGE_SIZE, method='bilinear')
-    
-    # MobileNetV2 expects values in [-1, 1] range
     img = tf.cast(img, tf.float32)
     img = applications.mobilenet_v2.preprocess_input(img)
-    
     return img, label
 
 def augment_image(img, label):
-    """Apply data augmentation"""
-    # Random horizontal flip
     img = tf.image.random_flip_left_right(img)
-    
-    # Random brightness
     img = tf.image.random_brightness(img, 0.2)
-    
-    # Random contrast
     img = tf.image.random_contrast(img, 0.8, 1.2)
-    
-    # Random saturation
     img = tf.image.random_saturation(img, 0.8, 1.2)
-    
-    # Clip values to valid range for MobileNetV2
     img = tf.clip_by_value(img, -1.0, 1.0)
-    
     return img, label
 
 def create_dataset(items, is_training=True, augment=False):
-    """Create optimized TensorFlow dataset"""
     paths = [item[0] for item in items]
     labels = [item[1] for item in items]
-    
+
     dataset = tf.data.Dataset.from_tensor_slices((paths, labels))
-    
-    # Parallel loading
     dataset = dataset.map(
-        load_and_preprocess_image, 
+        load_and_preprocess_image,
         num_parallel_calls=tf.data.AUTOTUNE
     )
-    
-    # Apply augmentation
+
     if augment:
         dataset = dataset.map(
             augment_image,
             num_parallel_calls=tf.data.AUTOTUNE
         )
-    
-    # Shuffle training data
+
     if is_training:
         dataset = dataset.shuffle(buffer_size=1000, seed=SEED)
-    
-    # Batch and prefetch
+
     dataset = dataset.batch(BATCH_SIZE)
     dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
-    
     return dataset
 
-# Create datasets
 train_ds = create_dataset(train_items, is_training=True, augment=True)
 val_ds = create_dataset(val_items, is_training=False, augment=False)
 
@@ -217,21 +182,17 @@ print("\n" + "="*60)
 print("🏗️ BUILDING MODEL")
 print("="*60)
 
-# Load pre-trained MobileNetV2
 base_model = applications.MobileNetV2(
     input_shape=(IMAGE_SIZE[0], IMAGE_SIZE[1], 3),
     include_top=False,
     weights='imagenet',
     pooling=None
 )
-
-# Freeze base model initially
 base_model.trainable = False
 
 print(f"✅ Loaded MobileNetV2 (ImageNet weights)")
 print(f"   Total layers: {len(base_model.layers)}")
 
-# Build complete model
 inputs = keras.Input(shape=(IMAGE_SIZE[0], IMAGE_SIZE[1], 3))
 x = base_model(inputs, training=False)
 x = layers.GlobalAveragePooling2D(name='global_pool')(x)
@@ -252,7 +213,6 @@ print(f"   Base: MobileNetV2 (frozen)")
 print(f"   Head: GlobalPool → Dense(256) → Dense(128) → Dense({num_classes})")
 print(f"   Total params: {model.count_params():,}")
 
-# === COMPILE MODEL ===
 initial_lr = 0.001
 
 model.compile(
@@ -266,8 +226,8 @@ model.compile(
 
 print(f"\n✅ Model compiled (learning_rate={initial_lr})")
 
-# === CALLBACKS ===
-callbacks = [
+# === PHASE 1 CALLBACKS ===
+callbacks_phase1 = [
     keras.callbacks.EarlyStopping(
         monitor='val_accuracy',
         patience=15,
@@ -301,7 +261,7 @@ history_phase1 = model.fit(
     train_ds,
     validation_data=val_ds,
     epochs=EPOCHS,
-    callbacks=callbacks,
+    callbacks=callbacks_phase1,
     class_weight=class_weight_dict,
     verbose=1
 )
@@ -314,10 +274,8 @@ print("\n" + "="*60)
 print("🔥 PHASE 2: Fine-tuning (unfreezing top layers)")
 print("="*60)
 
-# Unfreeze top layers of base model
 base_model.trainable = True
 
-# Keep bottom 100 layers frozen
 fine_tune_at = 100
 for layer in base_model.layers[:fine_tune_at]:
     layer.trainable = False
@@ -325,7 +283,6 @@ for layer in base_model.layers[:fine_tune_at]:
 trainable_layers = sum([1 for layer in base_model.layers if layer.trainable])
 print(f"✅ Unfroze top {trainable_layers} layers of base model")
 
-# Recompile with lower learning rate
 fine_tune_lr = 1e-5
 
 model.compile(
@@ -339,19 +296,64 @@ model.compile(
 
 print(f"✅ Recompiled (learning_rate={fine_tune_lr})")
 
-# Fine-tune
+# === PHASE 2 CALLBACKS ===
+# FIX: Always create FRESH callbacks for Phase 2.
+# Reusing Phase 1 callbacks causes EarlyStopping to trigger
+# immediately because its internal patience counter is still
+# exhausted from Phase 1, resulting in an empty history dict {}.
+callbacks_phase2 = [
+    keras.callbacks.EarlyStopping(
+        monitor='val_accuracy',
+        patience=10,
+        restore_best_weights=True,
+        verbose=1,
+        mode='max'
+    ),
+    keras.callbacks.ModelCheckpoint(
+        filepath=os.path.join(MODEL_DIR, "checkpoint_best.keras"),
+        monitor='val_accuracy',
+        save_best_only=True,
+        verbose=1,
+        mode='max'
+    ),
+    keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss',
+        factor=0.5,
+        patience=5,
+        min_lr=1e-7,
+        verbose=1
+    ),
+    keras.callbacks.TerminateOnNaN()
+]
+
 history_phase2 = model.fit(
     train_ds,
     validation_data=val_ds,
-    epochs=50,
+    epochs=phase1_epochs + 100,
     initial_epoch=phase1_epochs,
-    callbacks=callbacks,
+    callbacks=callbacks_phase2,
     class_weight=class_weight_dict,
     verbose=1
 )
 
-phase2_epochs = len(history_phase2.history['accuracy'])
-print(f"\n✅ Phase 2 complete: {phase2_epochs} epochs")
+print("\n🔍 Phase 2 history keys:", list(history_phase2.history.keys()))
+print("🔍 Phase 2 epochs ran:", len(history_phase2.history.get('accuracy', [])))
+
+if 'accuracy' in history_phase2.history and len(history_phase2.history['accuracy']) > 0:
+    phase2_epochs = len(history_phase2.history['accuracy'])
+    print(f"\n✅ Phase 2 complete: {phase2_epochs} epochs")
+else:
+    print("\n⚠️ Phase 2 training did not complete or had no epochs")
+    print("   Using phase 1 results only")
+    phase2_epochs = 0
+    history_phase2.history = {
+        'accuracy': [],
+        'val_accuracy': [],
+        'loss': [],
+        'val_loss': [],
+        'top_2_accuracy': [],
+        'val_top_2_accuracy': []
+    }
 
 # === SAVE MODEL ===
 model.save(MODEL_PATH)
@@ -400,12 +402,10 @@ print("\n" + "="*60)
 print("🔍 PER-CLASS PERFORMANCE")
 print("="*60)
 
-# Get predictions
 val_predictions = model.predict(val_ds, verbose=0)
 val_pred_classes = np.argmax(val_predictions, axis=1)
 val_true_classes = np.array([label for _, label in val_items])
 
-# Confusion matrix style analysis
 print(f"\n{'Class':<20} {'Accuracy':<10} {'Correct/Total':<15}")
 print("-" * 50)
 
@@ -413,12 +413,11 @@ class_accuracies = []
 for class_idx in range(num_classes):
     class_mask = val_true_classes == class_idx
     class_total = np.sum(class_mask)
-    
+
     if class_total > 0:
         class_correct = np.sum(val_pred_classes[class_mask] == class_idx)
         class_acc = class_correct / class_total
         class_accuracies.append(class_acc)
-        
         print(f"{class_names[class_idx]:<20} {class_acc:>6.2%}     {class_correct:>3}/{class_total:<3}")
     else:
         print(f"{class_names[class_idx]:<20} {'N/A':<10} {'0/0':<15}")
@@ -444,14 +443,12 @@ if val_acc < 0.30:
     print("   • Check if humans can distinguish the classes")
     print("   • Verify images are loading correctly")
     print("   • Consider collecting more diverse images")
-    
 elif val_acc < 0.60:
     print("\n⚠️ Model is struggling to learn")
     print("\n💡 Suggestions:")
     print("   • Check image quality and labeling")
     print("   • Increase dataset size if possible")
     print("   • Verify classes are visually distinguishable")
-    
 elif val_acc < 0.80:
     print("\n🟡 Model is learning but could improve")
     if overfitting_gap > 0.15:
@@ -460,7 +457,6 @@ elif val_acc < 0.80:
     else:
         print("   • Consider training longer")
         print("   • Try different augmentation strategies")
-        
 else:
     print("\n✅ Model is performing well!")
     if overfitting_gap < 0.10:
