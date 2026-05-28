@@ -10,3 +10,17 @@
 2025-12-03 16:27:20,502 - INFO - [predict] File: image13.jpeg | Predicted: curacha_male | Confidence: 0.9973
 2025-12-03 16:27:44,616 - INFO - [predict] File: blue_crab_female4.jpg | Predicted: blue_crab_female | Confidence: 0.9994
 2025-12-03 16:27:59,703 - INFO - [predict] File: mud_crab_female25.jpg | Predicted: mud_crab_female | Confidence: 0.9987
+2026-05-25 22:50:44,677 - INFO - [predict] File: IMG_0025.JPG | Predicted: Blue Crab Female | Confidence: 0.9999
+2026-05-25 22:51:53,242 - INFO - [predict] File: IMG_86044.JPG | Predicted: Curacha Male | Confidence: 0.9999
+2026-05-25 23:57:39,004 - INFO - [predict] File: IMG_86044.JPG | Predicted: Curacha Male | Confidence: 0.9999
+2026-05-26 00:20:37,719 - INFO - [predict] File: IMG_0037.JPG | Predicted: Blue Crab Female | Confidence: 1.0000
+2026-05-26 00:20:51,717 - INFO - [predict] File: IMG_2138.JPG | Predicted: Mud Crab Female | Confidence: 1.0000
+2026-05-26 00:21:03,475 - INFO - [predict] File: IMG_4092.JPG | Predicted: Mud Crab Male | Confidence: 0.9970
+2026-05-26 00:22:49,997 - INFO - [predict] File: IMG_86044.JPG | Predicted: Curacha Male | Confidence: 0.9999
+2026-05-26 00:23:44,339 - INFO - [predict] File: IMG_86044.JPG | Predicted: Curacha Male | Confidence: 0.9999
+2026-05-26 00:23:48,187 - INFO - [predict] File: IMG_86044.JPG | Predicted: Curacha Male | Confidence: 0.9999
+2026-05-26 00:27:52,801 - INFO - [predict] File: IMG_0031.JPG | Predicted: Blue Crab Female | Confidence: 1.0000
+2026-05-26 00:28:03,047 - INFO - [predict] File: IMG_0111.JPG | Predicted: Blue Crab Female | Confidence: 1.0000
+2026-05-26 00:29:11,909 - INFO - [predict] File: IMG_0037.JPG | Predicted: Blue Crab Female | Confidence: 1.0000
+2026-05-26 00:41:06,364 - INFO - [predict] File: IMG_0121.JPG | Predicted: Blue Crab Female | Confidence: 1.0000
+2026-05-26 00:41:24,416 - INFO - [predict] File: IMG_0067.JPG | Predicted: Blue Crab Female | Confidence: 0.9993
