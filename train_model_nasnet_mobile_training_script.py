@@ -55,18 +55,11 @@ for img in coco_data['images']:
     img_id = img['id']
     file_name = img['file_name']
 
-    if '..' in file_name or file_name.startswith('label-studio'):
-        file_name = os.path.basename(file_name)
-
     possible_paths = [
-        os.path.join(IMAGES_DIR, file_name),
         os.path.join(COCO_DIR, file_name),
+        os.path.join(IMAGES_DIR, file_name),
         file_name,
     ]
-
-    original_path = os.path.join(COCO_DIR, img['file_name'])
-    if os.path.exists(original_path):
-        possible_paths.insert(0, original_path)
 
     for path in possible_paths:
         if os.path.exists(path):
