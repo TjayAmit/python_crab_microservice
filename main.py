@@ -19,15 +19,28 @@ from models_difference_result import (
 app = FastAPI(title="Crab Classification API")
 
 # === CONFIG ===
-MODEL_PATH = "model/checkpoint_best.keras"  # Using best checkpoint
+# Prefer the cropped/scale-robust model (train_model_cropped.py). The cropped
+# pipeline now trains with randomized framing (tight crop -> full frame), so the
+# whole-photo input this API sends matches what the model saw during training.
 CLASS_NAMES_PATH = "model/class_names.json"
 IMAGE_SIZE = (224, 224)  # Updated to match training (MobileNetV2 default)
 COCO_DIR = "coco"
 IMAGES_DIR = os.path.join(COCO_DIR, "images")
 
+# First existing path wins; lets the app run before and after a retrain.
+MODEL_CANDIDATES = [
+    "model/my_model_cropped.keras",          # final model from train_model_cropped.py
+    "model/checkpoint_best_cropped.keras",   # best checkpoint from the cropped run
+    "model/my_model.keras",                  # previous cropped run
+    "model/best_model.keras",
+]
+
 # === LOAD MODEL ===
-if not os.path.exists(MODEL_PATH):
-    raise FileNotFoundError(f"❌ Model not found at {MODEL_PATH}")
+MODEL_PATH = next((p for p in MODEL_CANDIDATES if os.path.exists(p)), None)
+if MODEL_PATH is None:
+    raise FileNotFoundError(
+        f"❌ No model found. Looked for: {MODEL_CANDIDATES}"
+    )
 
 model = tf.keras.models.load_model(MODEL_PATH)
 print(f"✅ Loaded model from {MODEL_PATH}")

@@ -43,9 +43,21 @@ BATCH_SIZE = 32
 EPOCHS = 100
 VAL_SPLIT = 0.15
 TEST_SPLIT = 0.15
-BOX_MARGIN = 0.10          # add 10% padding around the box before cropping
 MIN_BOX_PX = 8             # skip degenerate boxes smaller than this
 SEED = 42
+
+# --- Crop-margin strategy (this is the key fix for the train/serve gap) ---
+# The OLD pipeline always cropped tight to the bbox, so the model only ever saw
+# the crab filling the frame. But the API (main.py) feeds the WHOLE photo, where
+# the crab is ~23% of the frame. That mismatch is why test acc is ~98% yet the
+# real app gets 40-80%. Fix: during training, randomize how much context we keep
+# around the box (from a tight crop to the full frame) so the model becomes
+# scale/framing invariant and works on un-cropped uploads.
+MARGIN_MIN = 0.05          # tightest crop seen in training
+MARGIN_MAX = 1.50          # loosest crop (clips to full frame for small boxes)
+VAL_MARGIN = 0.40          # fixed, moderately-loose framing for early stopping
+TIGHT_MARGIN = 0.10        # for the "tight" test number (comparable to old runs)
+FULL_FRAME_PROB = 0.20     # fraction of training samples shown with NO crop
 
 np.random.seed(SEED)
 tf.random.set_seed(SEED)
@@ -148,41 +160,75 @@ print("BUILDING DATA PIPELINE (with bbox cropping)")
 print("=" * 60)
 
 
-def load_and_crop(img_path, bbox, label):
-    img = tf.io.read_file(img_path)
-    img = tf.image.decode_image(img, channels=3, expand_animations=False)
-    img.set_shape([None, None, 3])
+def make_load_and_crop(mode):
+    """Return a tf.data mapping fn that crops with the given margin strategy.
 
-    shape = tf.shape(img)
-    H = tf.cast(shape[0], tf.float32)
-    W = tf.cast(shape[1], tf.float32)
+    mode:
+      'random' -> per-sample random margin in [MARGIN_MIN, MARGIN_MAX], and with
+                  probability FULL_FRAME_PROB the whole frame (no crop). Use for training.
+      'tight'  -> fixed TIGHT_MARGIN crop (comparable to the old pipeline).
+      'loose'  -> fixed VAL_MARGIN crop (moderately loose framing).
+      'full'   -> no crop at all; the whole photo resized. This mirrors exactly
+                  what the API does, so it is the honest predictor of app accuracy.
+    """
+    def load_and_crop(img_path, bbox, label):
+        img = tf.io.read_file(img_path)
+        img = tf.image.decode_image(img, channels=3, expand_animations=False)
+        img.set_shape([None, None, 3])
 
-    x, y, bw, bh = bbox[0], bbox[1], bbox[2], bbox[3]
-    mx = bw * BOX_MARGIN
-    my = bh * BOX_MARGIN
+        shape = tf.shape(img)
+        H = tf.cast(shape[0], tf.float32)
+        W = tf.cast(shape[1], tf.float32)
 
-    x1 = tf.clip_by_value(x - mx, 0.0, W - 1.0)
-    y1 = tf.clip_by_value(y - my, 0.0, H - 1.0)
-    x2 = tf.clip_by_value(x + bw + mx, 1.0, W)
-    y2 = tf.clip_by_value(y + bh + my, 1.0, H)
+        if mode == 'full':
+            img = tf.image.resize(img, IMAGE_SIZE, method='bilinear')
+            return img, label
 
-    x1i = tf.cast(x1, tf.int32)
-    y1i = tf.cast(y1, tf.int32)
-    cw = tf.maximum(tf.cast(x2 - x1, tf.int32), 1)
-    ch = tf.maximum(tf.cast(y2 - y1, tf.int32), 1)
+        if mode == 'random':
+            margin = tf.random.uniform([], MARGIN_MIN, MARGIN_MAX)
+            use_full = tf.random.uniform([]) < FULL_FRAME_PROB
+        elif mode == 'loose':
+            margin = tf.constant(VAL_MARGIN, tf.float32)
+            use_full = tf.constant(False)
+        else:  # 'tight'
+            margin = tf.constant(TIGHT_MARGIN, tf.float32)
+            use_full = tf.constant(False)
 
-    img = tf.image.crop_to_bounding_box(img, y1i, x1i, ch, cw)
-    img = tf.image.resize(img, IMAGE_SIZE, method='bilinear')   # float32, range ~[0,255]
-    return img, label
+        x, y, bw, bh = bbox[0], bbox[1], bbox[2], bbox[3]
+        mx = bw * margin
+        my = bh * margin
+
+        x1 = tf.clip_by_value(x - mx, 0.0, W - 1.0)
+        y1 = tf.clip_by_value(y - my, 0.0, H - 1.0)
+        x2 = tf.clip_by_value(x + bw + mx, 1.0, W)
+        y2 = tf.clip_by_value(y + bh + my, 1.0, H)
+
+        x1i = tf.cast(x1, tf.int32)
+        y1i = tf.cast(y1, tf.int32)
+        cw = tf.maximum(tf.cast(x2 - x1, tf.int32), 1)
+        ch = tf.maximum(tf.cast(y2 - y1, tf.int32), 1)
+
+        cropped = tf.image.crop_to_bounding_box(img, y1i, x1i, ch, cw)
+        # Randomly fall back to the full frame so the model also handles
+        # un-cropped uploads (which is what the API actually sends).
+        img = tf.cond(use_full, lambda: img, lambda: cropped)
+        img = tf.image.resize(img, IMAGE_SIZE, method='bilinear')   # float32, ~[0,255]
+        return img, label
+
+    return load_and_crop
 
 
 def augment_image(img, label):
     # Operates on [0,255] BEFORE preprocess_input (correct order).
+    # Wider ranges than before: real phone photos vary a lot in angle/lighting,
+    # so stronger augmentation closes the gap between the dataset and the wild.
     img = tf.image.random_flip_left_right(img)
-    img = tf.image.random_brightness(img, 25.0)
-    img = tf.image.random_contrast(img, 0.85, 1.15)
-    img = tf.image.random_saturation(img, 0.85, 1.15)
-    img = tf.image.random_hue(img, 0.02)
+    img = tf.image.random_flip_up_down(img)          # crabs photographed any orientation
+    img = tf.image.rot90(img, k=tf.random.uniform([], 0, 4, dtype=tf.int32))
+    img = tf.image.random_brightness(img, 40.0)
+    img = tf.image.random_contrast(img, 0.75, 1.25)
+    img = tf.image.random_saturation(img, 0.75, 1.25)
+    img = tf.image.random_hue(img, 0.04)
     img = tf.clip_by_value(img, 0.0, 255.0)
     return img, label
 
@@ -192,7 +238,7 @@ def preprocess(img, label):
     return img, label
 
 
-def create_dataset(items, training=False, augment=False):
+def create_dataset(items, mode, training=False, augment=False):
     paths = [it[0] for it in items]
     labels = [it[1] for it in items]
     boxes = [it[2] for it in items]
@@ -200,7 +246,7 @@ def create_dataset(items, training=False, augment=False):
     ds = tf.data.Dataset.from_tensor_slices(
         (tf.constant(paths), tf.constant(boxes, dtype=tf.float32), tf.constant(labels))
     )
-    ds = ds.map(load_and_crop, num_parallel_calls=tf.data.AUTOTUNE)
+    ds = ds.map(make_load_and_crop(mode), num_parallel_calls=tf.data.AUTOTUNE)
     if augment:
         ds = ds.map(augment_image, num_parallel_calls=tf.data.AUTOTUNE)
     ds = ds.map(preprocess, num_parallel_calls=tf.data.AUTOTUNE)
@@ -210,9 +256,14 @@ def create_dataset(items, training=False, augment=False):
     return ds
 
 
-train_ds = create_dataset(train_items, training=True, augment=True)
-val_ds = create_dataset(val_items)
-test_ds = create_dataset(test_items)
+# Train on randomized framing; validate on a fixed loose framing so early
+# stopping selects a model that is good at the loosely-framed photos the app sees.
+train_ds = create_dataset(train_items, 'random', training=True, augment=True)
+val_ds = create_dataset(val_items, 'loose')
+# Two held-out test views: 'tight' is comparable to the old 98% number, 'full'
+# (no crop) mirrors exactly what the API sends and predicts real app accuracy.
+test_ds = create_dataset(test_items, 'tight')
+test_full_ds = create_dataset(test_items, 'full')
 print("Data pipeline ready")
 
 # === BUILD MODEL ===
@@ -301,14 +352,17 @@ print("FINAL EVALUATION (held-out TEST set)")
 print("=" * 60)
 
 test_loss, test_acc, test_top2 = model.evaluate(test_ds, verbose=0)
-train_eval = model.evaluate(create_dataset(train_items), verbose=0)
-print(f"\nTRAIN acc: {train_eval[1]:.4f}")
-print(f"TEST  acc: {test_acc:.4f}   top-2: {test_top2:.4f}   loss: {test_loss:.4f}")
-print(f"Train-Test gap: {train_eval[1] - test_acc:.4f}")
+full_loss, full_acc, full_top2 = model.evaluate(test_full_ds, verbose=0)
+train_eval = model.evaluate(create_dataset(train_items, 'tight'), verbose=0)
+print(f"\nTRAIN acc (tight) : {train_eval[1]:.4f}")
+print(f"TEST  acc (tight) : {test_acc:.4f}   top-2: {test_top2:.4f}   loss: {test_loss:.4f}")
+print(f"TEST  acc (FULL   ): {full_acc:.4f}   top-2: {full_top2:.4f}   loss: {full_loss:.4f}")
+print("  ^ the FULL number is what the API (un-cropped uploads) will actually get.")
+print(f"Train-Test gap (tight): {train_eval[1] - test_acc:.4f}")
 
-# Predictions on the test set for confusion analysis
+# Confusion analysis on the FULL-FRAME view, because that is what the app sees.
 y_true = np.array([it[1] for it in test_items])
-y_prob = model.predict(test_ds, verbose=0)
+y_prob = model.predict(test_full_ds, verbose=0)
 y_pred = np.argmax(y_prob, axis=1)
 
 # Confusion matrix
@@ -356,15 +410,19 @@ print("DECOMPOSED ACCURACY (the numbers that matter for you)")
 print("=" * 60)
 print(f"  SPECIES-only accuracy: {species_acc:.2%}   (Blue / Mud / Curacha / Killer)")
 print(f"  GENDER-only accuracy : {gender_acc:.2%}   (only over crabs that have a sex label)")
-print(f"  FULL 9-class accuracy: {test_acc:.2%}")
+print(f"  9-class acc (tight)  : {test_acc:.2%}")
+print(f"  9-class acc (FULL)   : {full_acc:.2%}   <- realistic app number")
 
 report = {
-    'test_accuracy': float(test_acc),
-    'test_top2': float(test_top2),
+    'test_accuracy_tight': float(test_acc),
+    'test_accuracy_full_frame': float(full_acc),
+    'test_top2_tight': float(test_top2),
+    'test_top2_full_frame': float(full_top2),
     'train_accuracy': float(train_eval[1]),
     'species_accuracy': float(species_acc),
     'gender_accuracy': float(gender_acc),
     'confusion_matrix': cm.tolist(),
+    'confusion_matrix_note': 'computed on full-frame (un-cropped) test view',
     'class_names': class_names,
 }
 with open(REPORT_PATH, 'w') as f:
